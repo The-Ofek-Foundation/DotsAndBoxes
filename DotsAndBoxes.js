@@ -559,6 +559,7 @@ class MctsNode {
 		this.result = 10; // never gonna happen
 		this.greenScore = greenScore;
 		this.redScore = redScore;
+		this.countUnexplored = 0;
 	}
 
 	chooseChild(squares, wallsx, wallsy, movesRemaining) {
@@ -569,6 +570,7 @@ class MctsNode {
 					this.result = (this.greenScore > this.redScore) === this.turn ?
 						1:-1;
 				this.children = mctsGetChildren(this, squares, wallsx, wallsy);
+				this.countUnexplored = this.children.length;
 			}
 		}
 		if (this.result !== 10) // leaf node
@@ -576,17 +578,15 @@ class MctsNode {
 		else {
 			movesRemaining--;
 			var i;
-			var countUnexplored = 0;
-			for (i = 0; i < this.children.length; i++)
-				if (this.children[i].totalTries === 0)
-					countUnexplored++;
+			var unexplored = this.countUnexplored;
 
-			if (countUnexplored > 0) {
-				var ran = Math.floor(Math.random() * countUnexplored);
+			if (unexplored > 0) {
+				this.countUnexplored--;
+				var ran = Math.floor(Math.random() * unexplored);
 				for (i = 0; i < this.children.length; i++)
 					if (this.children[i].totalTries === 0) {
-						countUnexplored--;
-						if (countUnexplored === 0) {
+						unexplored--;
+						if (unexplored === 0) {
 							playLastMove(this.children[i].lastMove,
 								squares, wallsx, wallsy);
 							this.children[i].backPropogate(mctsSimulate(
@@ -596,8 +596,6 @@ class MctsNode {
 						}
 					}
 			} else {
-				if (this.children.length === 0)
-					console.log(movesRemaining, this.result);
 				var bestChild = this.children[0],
 					bestPotential =
 						mctsChildPotential(this.children[0], this.totalTries, this.turn),
