@@ -4,10 +4,15 @@ var squares, guiSquares;
 var dimensions = [4, 4];
 var hoverDot = [-1, -1];
 var selectedDot = [-1, -1];
+var prevMove = new Array(3);
 var turn; // true is green, false is red
 var greenScore, redScore;
 var wallsx, wallsy;
 var guiWallsx, guiWallsy;
+var movesRemaining;
+
+var globalRoot;
+var expansionConstant = 1.2;
 
 var boardui = getElemId('board');
 var brush = boardui.getContext("2d");
@@ -72,6 +77,10 @@ function newGame() {
 			guiSquares[i][a] = false;
 		}
 	}
+
+	movesRemaining = wallsx.length * wallsx[0].length +
+		wallsy.length * wallsy[0].length;
+	globalRoot = createMctsRoot();
 
 	resizeBoard();
 	drawBoard();
@@ -198,6 +207,7 @@ function placeWall(startdot, enddot) {
 	if (startdot[0] === enddot[0]) { // wally
 		lowerdot = startdot[1] < enddot[1] ? startdot:enddot;
 		wallsy[lowerdot[0]][lowerdot[1]] = true;
+		prevMove = [1, lowerdot[0], lowerdot[1]];
 		guiWallsy[lowerdot[0]][lowerdot[1]] = turn;
 		if (lowerdot[0] > 0) {
 			squares[lowerdot[0] - 1][lowerdot[1]]++;
@@ -216,6 +226,7 @@ function placeWall(startdot, enddot) {
 	} else { // wallx
 		lowerdot = startdot[0] < enddot[0] ? startdot:enddot;
 		wallsx[lowerdot[0]][lowerdot[1]] = true;
+		prevMove = [0, lowerdot[0], lowerdot[1]];
 		guiWallsx[lowerdot[0]][lowerdot[1]] = turn;
 		if (lowerdot[1] > 0) {
 			squares[lowerdot[0]][lowerdot[1] - 1]++;
@@ -251,11 +262,12 @@ boardui.addEventListener('mousedown', function (e) {
 		turn ? (greenScore += completedSquares):(redScore += completedSquares);
 		turn = completedSquares > 0 ? turn:!turn;
 		selectedDot = hoverDot = [-1, -1];
+		movesRemaining--;
 	}
 	drawBoard();
 	setTimeout(function () {
 		var blurb = " (" + greenScore + ":" + redScore + ")";
-		if (gameOver())
+		if (movesRemaining === 0)
 			if (greenScore === redScore)
 				alert("Game tied!");
 			else if (greenScore < redScore)
@@ -274,6 +286,256 @@ boardui.addEventListener('mousemove', function (e) {
 		drawBoard();
 	}
 });
+
+function MctsGetChildren(parent, squares, wallsx, wallsy) {
+	var greenScore = parent.greenScore,
+	    redScore = parent.redScore,
+	    scoreAddition,
+	    turn = parent.turn,
+	    children = [];
+
+	for (var i = 0; i < wallsx.length; i++)
+		for (var a = 0; a < wallsx[i].length; a++)
+			if (!wallsx[i][a]) {
+				scoreAddition = 0;
+				if (a > 0 && squares[i][a - 1] === 3)
+					scoreAddition++;
+				if (a < dimensions[1] - 1 && squares[i][a] === 3)
+					scoreAddition++;
+				children.push(new MctsNode(parent,
+					scoreAddition === 0 ? !turn:turn,
+					[0, i, a],
+					greenScore + turn ? scoreAddition:0,
+					redScore + turn ? 0:scoreAddition));
+			}
+
+	for (var i = 0; i < wallsy.length; i++)
+		for (var a = 0; a < wallsy[i].length; a++)
+			if (!wallsy[i][a]) {
+				scoreAddition = 0;
+				if (i > 0 && squares[i - 1][a] === 3)
+					scoreAddition++;
+				if (i < dimensions[0] - 1 && squares[i][a] === 3)
+					scoreAddition++;
+				children.push(new MctsNode(parent,
+					scoreAddition === 0 ? !turn:turn,
+					[1, i, a],
+					greenScore + turn ? scoreAddition:0,
+					redScore + turn ? 0:scoreAddition));
+			}
+
+	return children; // if ransom is paid
+}
+
+function createMctsRoot() {
+	return new MctsNode(null, turn, prevMove, greenScore, redScore);
+}
+
+function runMcts(time) {
+	if (!globalRoot)
+		globalRoot = createMctsRoot();
+	var startTime = new Date().getTime();
+	while ((new Date().getTime() - startTime) / 1E3 < time) {
+		for (var i = 0; i < 2000; i++)
+			globalRoot.chooseChild(simpleCopy(squares), simpleCopy(wallsx),
+				simpleCopy(wallsy), movesRemaining);
+		if (globalRoot.children.length < 2)
+			return;
+	}
+	while (globalRoot.totalTries < movesRemaining)
+		globalRoot.chooseChild(simpleCopy(squares), simpleCopy(wallsx),
+				simpleCopy(wallsy), movesRemaining);
+	console.log("Total Simulations: " + globalRoot.totalTries);
+}
+
+function MctsSimulate(node, squares, wallsx, wallsy, movesRemaining) {
+	if (node.result !== 10)
+		return node.result;
+
+	if (movesRemaining === 0) // game over
+		if (node.greenScore === node.redScore)
+			return node.result = 0;
+		else return (node.greenScore > node.redScore) === node.turn ? 1:-1;
+
+	var turn = node.turn, greenScore = node.greenScore, redScore = node.redScore;
+	var move, ranIndex, x, y;
+	for (; movesRemaining > 0; movesRemaining--) {
+		move = [-1, -1, -1];
+		ranIndex = parseInt(Math.random() * (movesRemaining - 1));
+		// console.log("start", ranIndex, movesRemaining);
+
+		outerx:
+		for (x = 0; x < wallsx.length; x++)
+			for (y = 0; y < wallsx[x].length; y++)
+				if (!wallsx[x][y]) {
+					// console.log('heya');
+					if (ranIndex === 0) {
+						move = [0, x, y];
+						// console.log(move);
+						wallsx[x][y] = true;
+						break outerx;
+					} else ranIndex--;
+				}
+
+		// console.log(ranIndex, move, wallsy);
+
+		outery:
+		if (ranIndex > 0 || move[0] === -1)
+			for (x = 0; x < wallsy.length; x++)
+				for (y = 0; y < wallsy[x].length; y++)
+					if (!wallsy[x][y]) {
+						// console.log('heya');
+						if (ranIndex === 0) {
+							move = [1, x, y];
+							// console.log(move);
+							wallsy[x][y] = true;
+							break outery;
+						} else ranIndex--;
+					}
+
+		// console.log(ranIndex, move);
+
+		var completedSquares = MctsCompleteSquares(move, squares);
+		turn ? (greenScore += completedSquares):(redScore += completedSquares);
+		turn = completedSquares > 0 ? turn:!turn;
+	}
+
+	if (greenScore === redScore)
+		return 0;
+	else return (greenScore > redScore) === node.turn ? 1:-1;
+}
+
+function MctsCompleteSquares(move, squares) {
+	var completedSquares = 0;
+	if (move[0] === 0) { // wallsx
+		if (move[2] > 0) {
+			squares[move[1]][move[2] - 1]++;
+			if (squares[move[1]][move[2] - 1] === 4)
+				completedSquares++;
+		}
+		if (move[2] < dimensions[1] - 1) {
+			squares[move[1]][move[2]]++;
+			if (squares[move[1]][move[2]] === 4)
+				completedSquares++;
+		}
+	} else {
+		if (move[1] > 0) {
+			squares[move[1] - 1][move[2]]++;
+			if (squares[move[1] - 1][move[2]])
+				completedSquares++;
+		}
+		if (move[1] < dimensions[0] - 1) {
+			squares[move[1]][move[2]]++;
+			if (squares[move[1]][move[2]] === 4)
+				completedSquares++;
+		}
+	}
+	return completedSquares;
+}
+
+function playLastMove(lastMove, squares, wallsx, wallsy) {
+	if (lastMove[0] === 0) { // wallsx
+		wallsx[lastMove[1]][lastMove[2]] = true;
+		if (lastMove[2] > 0)
+			squares[lastMove[1]][lastMove[2] - 1]++;
+		if (lastMove[2] < dimensions[1] - 1)
+			squares[lastMove[1]][lastMove[2]]++;
+	} else { // wallsy
+		wallsy[lastMove[1]][lastMove[2]] = true;
+		if (lastMove[1] > 0)
+			squares[lastMove[1] - 1][lastMove[2]]++;
+		if (lastMove[1] < dimensions[0] - 1)
+			squares[lastMove[1]][lastMove[2]]++;
+	}
+}
+
+function undoLastMove(lastMove, wallsx, wallsy) {
+	if (lastMove[0] === 0) { // wallsx
+		wallsx[lastMove[1]][lastMove[2]] = false;
+	} else { // wallsy
+		wallsy[lastMove[1]][lastMove[2]] = false;
+	}
+}
+
+class MctsNode {
+	constructor(parent, turn, lastMove, greenScore, redScore) {
+		this.parent = parent;
+		this.turn = turn;
+		this.lastMove = lastMove; // arr[0/1 (wall x/y), x, y]
+		this.hits = 0;
+		this.misses = 0;
+		this.totalTries = 0;
+		this.hasChildren = false;
+		this.children = [];
+		this.result = 10; // never gonna happen
+		this.greenScore = greenScore;
+		this.redScore = redScore;
+	}
+
+	chooseChild(squares, wallsx, wallsy, movesRemaining) {
+		if (this.hasChildren === false) {
+			this.hasChildren = true;
+			if (movesRemaining > 0)
+				this.children = MctsGetChildren(this, squares, wallsx, wallsy);
+		}
+		if (this.result !== 10) // leaf node
+			this.backPropogate(this.result);
+		else {
+			movesRemaining--;
+			var i;
+			var countUnexplored = 0;
+			for (i = 0; i < this.children.length; i++)
+				if (this.children[i].totalTries === 0)
+					countUnexplored++;
+
+			if (countUnexplored > 0) {
+				var ran = Math.floor(Math.random() * countUnexplored);
+				for (i = 0; i < this.children.length; i++)
+					if (this.children[i].totalTries === 0) {
+						countUnexplored--;
+						if (countUnexplored === 0) {
+							playLastMove(this.children[i].lastMove,
+								squares, wallsx, wallsy);
+							this.children[i].backPropogate(MctsSimulate(
+								this.children[i], squares, wallsx, wallsy,
+								movesRemaining));
+							return;
+						}
+					}
+			} else {
+				var bestChild = this.children[0], bestPotential = MctsChildPotential(this.children[0], this.totalTries), potential;
+				for (i = 1; i < this.children.length; i++) {
+					potential = MctsChildPotential(this.children[i], this.totalTries);
+					if (potential > bestPotential) {
+						bestPotential = potential;
+						bestChild = this.children[i];
+					}
+				}
+				playLastMove(bestChild.lastMove, squares, wallsx, wallsy);
+				bestChild.chooseChild(squares, wallsx, wallsy, movesRemaining);
+			}
+		}
+	}
+
+	backPropogate(simulation) {
+		if (simulation === 1)
+			this.hits++;
+		else if (simulation === -1)
+			this.misses++;
+		this.totalTries++;
+		if (this.parent !== null)
+			this.parent.backPropogate(simulation *
+				(this.parent.turn === this.turn ? 1:-1));
+	}
+}
+
+function MctsChildPotential(child, t) {
+	var w = child.misses - child.hits;
+	var n = child.totalTries;
+	var c = expansionConstant;
+
+	return w / n	+	c * Math.sqrt(Math.log(t) / n);
+}
 
 function simpleCopy(arr) {
 	var simpleCopy = new Array(arr.length);
