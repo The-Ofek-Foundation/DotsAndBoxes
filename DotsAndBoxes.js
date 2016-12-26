@@ -1,7 +1,7 @@
 var docWidth, docHeight;
 var boardWidth, boardHeight, squareWidth;
 var squares, guiSquares;
-var dimensions = [7, 7];
+var dimensions = [5, 5];
 var hoverDot = [-1, -1];
 var selectedDot = [-1, -1];
 var prevMove = new Array(3);
@@ -10,7 +10,7 @@ var greenScore, redScore;
 var wallsx, wallsy;
 var guiWallsx, guiWallsy;
 var movesRemaining;
-var timeToThink = 1;
+var timeToThink = 5;
 var aiTurn = 'none';
 var over = false;
 var maxScore;
@@ -526,6 +526,7 @@ function mctsSimulateSmart(node, squares, wallsx, wallsy, movesRemaining) {
 	var tempTurn = node.turn, gScore = node.greenScore, rScore = node.redScore;
 	var move, ranIndex, x, y;
 	var almostSquares = [], cS; // chosenSquare
+	var splicing = false;
 	for (var i = 0; i < squares.length; i++)
 		for (var a = 0; a < squares[i].length; a++)
 			if (squares[i][a] === 3)
@@ -533,20 +534,25 @@ function mctsSimulateSmart(node, squares, wallsx, wallsy, movesRemaining) {
 	for (var mRemaining = movesRemaining; mRemaining > 0; mRemaining--) {
 		move = [-1, -1, -1];
 
-		while (almostSquares.length > 0 && move[0] === -1) {
-			cS = almostSquares[0];
-			if (!wallsx[cS[0]][cS[1]])
-				move = [0, cS[0], cS[1]];
-			else if (!wallsy[cS[0]][cS[1]])
-				move = [1, cS[0], cS[1]];
-			else if (!wallsx[cS[0]][cS[1] + 1])
-				move = [0, cS[0], cS[1] + 1];
-			else if (!wallsy[cS[0] + 1], cS[1])
-				move = [1, cS[0] + 1, cS[1]];
-			almostSquares.splice(0, 1);
-		}
+		if (!splicing && almostSquares.length > 0)
+			splicing = Math.random() < 0.5;
+
+		if (splicing)
+			while (almostSquares.length > 0 && move[0] === -1) {
+				cS = almostSquares[0];
+				if (!wallsx[cS[0]][cS[1]])
+					move = [0, cS[0], cS[1]];
+				else if (!wallsy[cS[0]][cS[1]])
+					move = [1, cS[0], cS[1]];
+				else if (!wallsx[cS[0]][cS[1] + 1])
+					move = [0, cS[0], cS[1] + 1];
+				else if (!wallsy[cS[0] + 1], cS[1])
+					move = [1, cS[0] + 1, cS[1]];
+				almostSquares.splice(0, 1);
+			}
 
 		if (move[0] === -1) {
+			splicing = false;
 			do {
 				ranIndex = parseInt(Math.random() * mRemaining);
 			} while (mRemaining <= ranIndex);
@@ -758,7 +764,11 @@ class MctsNode {
 					bestPotential =
 						mctsChildPotential(this.children[0], this.totalTries, this.turn),
 					potential;
+
+				propResult(this, this.children[0]);
+
 				for (i = 1; i < this.children.length; i++) {
+					propResult(this, this.children[i]);
 					potential = mctsChildPotential(this.children[i], this.totalTries, this.turn);
 					if (potential > bestPotential) {
 						bestPotential = potential;
@@ -781,6 +791,13 @@ class MctsNode {
 			this.parent.backPropogate(simulation *
 				(this.parent.turn === this.turn ? 1:-1));
 	}
+}
+
+function propResult(parent, child) {
+	if (parent.turn === child.turn && child.result === 1)
+		parent.result = 1;
+	else if (parent.turn !== child.turn && child.result === -1)
+		parent.result = 1;
 }
 
 function mctsChildPotential(child, t, turn) {
