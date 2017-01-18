@@ -749,8 +749,7 @@ class MctsNode {
 				var ran = Math.floor(Math.random() * unexplored);
 				for (i = 0; i < this.children.length; i++)
 					if (this.children[i].totalTries === 0) {
-						unexplored--;
-						if (unexplored === 0) {
+						if (ran === 0) {
 							playLastMove(this.children[i].lastMove,
 								squares, wallsx, wallsy);
 							this.children[i].backPropogate(mctsSimulateSmart(
@@ -758,6 +757,7 @@ class MctsNode {
 								movesRemaining));
 							return;
 						}
+						ran--;
 					}
 			} else {
 				var bestChild = this.children[0],
