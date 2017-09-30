@@ -29,7 +29,7 @@ function pageReady() {
 }
 
 function onResize() {
-	resizeGameSettingsTable();
+	resizeSettingsTable();
 	resizeBoard();
 	drawBoard();
 }
